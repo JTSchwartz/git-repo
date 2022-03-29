@@ -14,11 +14,15 @@ func main() {
 		Name:  "git-repo",
 		Usage: "Open the current repo in browser",
 		Action: func(context *cli.Context) (err error) {
-			url, err := getRepoUrl()
-			if err != nil {
-				return
+			unparsed := make(chan string, 1)
+			parsed := make(chan string, 1)
+
+			go parseRepoUrl(unparsed, parsed)
+			err = getRepoUrl(unparsed)
+
+			if err == nil {
+				err = browser.OpenURL(<-parsed)
 			}
-			err = browser.OpenURL(url)
 			return
 		},
 	}
@@ -28,19 +32,20 @@ func main() {
 	}
 }
 
-func getRepoUrl() (url string, err error) {
-	unparsedUrl, err := GetGitConfig("remote.origin.url")
-	if err != nil {
-		return
-	}
+func getRepoUrl(c chan string) (err error) {
+	url, err := GetGitConfig("remote.origin.url")
+	c <- url
+	return
+}
 
+func parseRepoUrl(in chan string, out chan string) {
+	unparsedUrl := <-in
 	re := regexp.MustCompile("[^@]+@([^:]+):(.+)\\.git")
 	parts := re.FindStringSubmatch(unparsedUrl)
 	if parts != nil {
-		url = "https://" + parts[1] + "/" + parts[2]
+		out <- "https://" + parts[1] + "/" + parts[2]
 	} else {
 		re = regexp.MustCompile("(.*)\\.git")
-		url = re.FindStringSubmatch(unparsedUrl)[1]
+		out <- re.FindStringSubmatch(unparsedUrl)[1]
 	}
-	return
 }
